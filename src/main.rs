@@ -22,7 +22,10 @@ unsafe fn get_window_text(hwnd: HWND) -> String {
     let text_length = GetWindowTextLengthW(hwnd);
     let mut wide_buffer = vec![0u16; (text_length + 1) as usize];
     GetWindowTextW(hwnd, &mut wide_buffer);
-    wide_string_to_string(&wide_buffer).unwrap_or("".to_string())
+    match wide_string_to_string(&wide_buffer) {
+        Ok(s) => s,
+        Err(e) => panic!("Failed to convert wide string to string: {:?}", e),
+    }
 }
 
 /// Get the display percent of a rect on the screen
@@ -72,7 +75,10 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, _lparam: LPARAM) -> B
     }
 
     let mut rect = RECT::default();
-    GetWindowRect(hwnd, &mut rect).expect(&format!("GetWindowRect failed for {:?}", hwnd));
+    match GetWindowRect(hwnd, &mut rect) {
+        Ok(_) => {}
+        Err(e) => panic!("GetWindowRect failed for {:?}: {:?}", hwnd, e),
+    }
 
     if rect.left_top() {
         return BOOL(1);
@@ -102,8 +108,8 @@ Display Percent: {:.2}%
         rect.bottom - rect.top,
         true,
     ) {
-        Ok(_) => (),
-        Err(e) => println!("MoveWindow failed for {:?}: {}", hwnd, e),
+        Ok(_) => println!("MoveWindow succeeded for {:?}\n", hwnd),
+        Err(e) => println!("MoveWindow failed for {:?}: {}\n", hwnd, e),
     }
 
     BOOL(1)
@@ -111,6 +117,9 @@ Display Percent: {:.2}%
 
 fn main() {
     unsafe {
-        EnumWindows(Some(enum_window_callback), LPARAM(0)).expect("EnumWindows failed");
+        match EnumWindows(Some(enum_window_callback), LPARAM(0)) {
+            Ok(_) => {}
+            Err(e) => panic!("EnumWindows failed: {:?}", e),
+        };
     }
 }
