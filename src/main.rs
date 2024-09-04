@@ -1,7 +1,8 @@
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetSystemMetrics, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsIconic,
-    IsWindowVisible, MoveWindow, SM_CXSCREEN, SM_CYSCREEN,
+    IsWindowVisible, IsZoomed, SetWindowPos, ShowWindow, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE,
+    SWP_NOSIZE, SWP_NOZORDER, SW_RESTORE,
 };
 
 unsafe fn get_screen_size() -> (i32, i32) {
@@ -69,6 +70,11 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, _lparam: LPARAM) -> B
         return BOOL(1);
     }
 
+    let is_maximize = IsZoomed(hwnd).as_bool();
+    if is_maximize {
+        ShowWindow(hwnd, SW_RESTORE).expect(&format!("ShowWindow failed for {:?}", hwnd));
+    }
+
     let window_text = get_window_text(hwnd);
     if window_text.is_empty() {
         return BOOL(1);
@@ -100,16 +106,17 @@ Display Percent: {:.2}%
         display_percent * 100.0
     );
 
-    match MoveWindow(
+    match SetWindowPos(
         hwnd,
+        None,
         0,
         0,
-        rect.right - rect.left,
-        rect.bottom - rect.top,
-        true,
+        0,
+        0,
+        SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
     ) {
-        Ok(_) => println!("MoveWindow succeeded for {:?}\n", hwnd),
-        Err(e) => println!("MoveWindow failed for {:?}: {}\n", hwnd, e),
+        Ok(_) => println!("SetWindowPos succeeded for {:?}\n", hwnd,),
+        Err(e) => println!("SetWindowPos failed for {:?}: {}\n", hwnd, e),
     }
 
     BOOL(1)
