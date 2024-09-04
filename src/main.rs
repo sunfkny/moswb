@@ -118,7 +118,7 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, _lparam: LPARAM) -> B
     }
 
     println!(
-        "Title: {window_text} Percent: {:.2}% {hwnd:?} {rect:?}",
+        "Title: {window_text:?} Percent: {:.2}% {hwnd:?} {rect:?}",
         display_percent * 100.0
     );
 
