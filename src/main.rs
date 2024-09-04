@@ -119,7 +119,7 @@ Display Percent: {:.2}%
         Ok(_) => println!("SetWindowPos succeeded for {:?}\n", hwnd,),
         Err(e) => {
             println!("SetWindowPos failed for {:?}: {}\n", hwnd, e);
-            if e.code() == HRESULT::from_win32(0x80070005) {
+            if e.code() == E_ACCESS_DENIED {
                 println!("Tip: Try running as administrator.");
             }
         }
@@ -127,6 +127,8 @@ Display Percent: {:.2}%
 
     BOOL(1)
 }
+
+const E_ACCESS_DENIED: HRESULT = HRESULT::from_win32(0x80070005);
 
 fn main() {
     unsafe {
