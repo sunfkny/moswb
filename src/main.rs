@@ -1,3 +1,4 @@
+use windows::core::HRESULT;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetSystemMetrics, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, IsIconic,
@@ -70,11 +71,6 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, _lparam: LPARAM) -> B
         return BOOL(1);
     }
 
-    let is_maximize = IsZoomed(hwnd).as_bool();
-    if is_maximize {
-        ShowWindow(hwnd, SW_RESTORE).expect(&format!("ShowWindow failed for {:?}", hwnd));
-    }
-
     let window_text = get_window_text(hwnd);
     if window_text.is_empty() {
         return BOOL(1);
@@ -94,6 +90,11 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, _lparam: LPARAM) -> B
     let display_percent = get_display_percent(rect, width, height);
     if display_percent > 0.5 {
         return BOOL(1);
+    }
+
+    let is_maximize = IsZoomed(hwnd).as_bool();
+    if is_maximize {
+        ShowWindow(hwnd, SW_RESTORE).expect(&format!("ShowWindow failed for {:?}", hwnd));
     }
 
     println!(
@@ -116,7 +117,12 @@ Display Percent: {:.2}%
         SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
     ) {
         Ok(_) => println!("SetWindowPos succeeded for {:?}\n", hwnd,),
-        Err(e) => println!("SetWindowPos failed for {:?}: {}\n", hwnd, e),
+        Err(e) => {
+            println!("SetWindowPos failed for {:?}: {}\n", hwnd, e);
+            if e.code() == HRESULT::from_win32(0x80070005) {
+                println!("Tip: Try running as administrator.");
+            }
+        }
     }
 
     BOOL(1)
