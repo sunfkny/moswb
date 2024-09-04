@@ -1,3 +1,5 @@
+use anyhow::anyhow;
+use anyhow::Result;
 use windows::core::HRESULT;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -10,7 +12,7 @@ unsafe fn get_screen_size() -> (i32, i32) {
     (GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN))
 }
 
-fn wide_string_to_string(wide_string: &[u16]) -> Result<String, std::string::FromUtf16Error> {
+fn wide_string_to_string(wide_string: &[u16]) -> Result<String> {
     let string = if let Some(null_pos) = wide_string.iter().position(|pos| *pos == 0) {
         String::from_utf16(&wide_string[..null_pos])?
     } else {
@@ -20,19 +22,16 @@ fn wide_string_to_string(wide_string: &[u16]) -> Result<String, std::string::Fro
     Ok(string)
 }
 
-unsafe fn get_window_text(hwnd: HWND) -> String {
-    let text_length = GetWindowTextLengthW(hwnd);
+fn get_window_text(hwnd: HWND) -> Result<String> {
+    let text_length = unsafe { GetWindowTextLengthW(hwnd) };
     let mut wide_buffer = vec![0u16; (text_length + 1) as usize];
-    GetWindowTextW(hwnd, &mut wide_buffer);
-    match wide_string_to_string(&wide_buffer) {
-        Ok(s) => s,
-        Err(e) => panic!("Failed to convert wide string to string: {:?}", e),
-    }
+    unsafe { GetWindowTextW(hwnd, &mut wide_buffer) };
+    wide_string_to_string(&wide_buffer)
+        .map_err(|e| anyhow!("Failed to convert wide string to string: {:?}", e))
 }
 
 /// Get the display percent of a rect on the screen
 fn get_display_percent(rect: RECT, width: i32, height: i32) -> f32 {
-    assert!(width > 0 && height > 0);
     let x_min = rect.left.max(0);
     let y_min = rect.top.max(0);
     let x_max = rect.right.min(width);
@@ -47,6 +46,10 @@ fn get_display_percent(rect: RECT, width: i32, height: i32) -> f32 {
     let original_width = (rect.right - rect.left) as f32;
     let original_height = (rect.bottom - rect.top) as f32;
 
+    if original_height <= 0.0 || original_width <= 0.0 {
+        return 0.0;
+    }
+
     (display_width * display_height) / (original_width * original_height)
 }
 
@@ -56,7 +59,8 @@ trait RectCalc {
 
 impl RectCalc for RECT {
     fn left_top(&self) -> bool {
-        (self.left >= 0 && self.left <= 100) && (self.top >= 0 && self.top <= 100)
+        (self.left >= 0 && self.left <= TOP_LEFT_BOUND)
+            && (self.top >= 0 && self.top <= TOP_LEFT_BOUND)
     }
 }
 
@@ -71,15 +75,25 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, _lparam: LPARAM) -> B
         return BOOL(1);
     }
 
-    let window_text = get_window_text(hwnd);
+    let window_text = match get_window_text(hwnd) {
+        Ok(text) => text,
+        Err(e) => {
+            eprintln!("Get window text failed for {:?}: {:?}", hwnd, e);
+            return BOOL(0);
+        }
+    };
+
     if window_text.is_empty() {
         return BOOL(1);
     }
 
     let mut rect = RECT::default();
     match GetWindowRect(hwnd, &mut rect) {
-        Ok(_) => {}
-        Err(e) => panic!("GetWindowRect failed for {:?}: {:?}", hwnd, e),
+        Ok(_) => (),
+        Err(e) => {
+            eprintln!("GetWindowRect failed for {:?}: {:?}", hwnd, e);
+            return BOOL(0);
+        }
     }
 
     if rect.left_top() {
@@ -94,16 +108,17 @@ unsafe extern "system" fn enum_window_callback(hwnd: HWND, _lparam: LPARAM) -> B
 
     let is_maximize = IsZoomed(hwnd).as_bool();
     if is_maximize {
-        ShowWindow(hwnd, SW_RESTORE).expect(&format!("ShowWindow failed for {:?}", hwnd));
+        match ShowWindow(hwnd, SW_RESTORE).ok() {
+            Ok(_) => (),
+            Err(e) => {
+                eprintln!("ShowWindow failed for {:?}: {:?}", hwnd, e);
+                return BOOL(0);
+            }
+        }
     }
 
     println!(
-        "\
-Title: {window_text:?}
-Window Handle: {hwnd:?}
-Rect: {rect:?}
-Display Percent: {:.2}%
-        ",
+        "Title: {window_text} Percent: {:.2}% {hwnd:?} {rect:?}",
         display_percent * 100.0
     );
 
@@ -116,25 +131,23 @@ Display Percent: {:.2}%
         0,
         SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
     ) {
-        Ok(_) => println!("SetWindowPos succeeded for {:?}\n", hwnd,),
+        Ok(_) => BOOL(1),
         Err(e) => {
-            println!("SetWindowPos failed for {:?}: {}\n", hwnd, e);
-            if e.code() == E_ACCESS_DENIED {
-                println!("Tip: Try running as administrator.");
-            }
+            eprintln!("SetWindowPos failed for {:?}: {:?}", hwnd, e);
+            return BOOL(0);
         }
     }
-
-    BOOL(1)
 }
 
 const E_ACCESS_DENIED: HRESULT = HRESULT::from_win32(0x80070005);
+const TOP_LEFT_BOUND: i32 = 100;
 
 fn main() {
-    unsafe {
-        match EnumWindows(Some(enum_window_callback), LPARAM(0)) {
-            Ok(_) => {}
-            Err(e) => panic!("EnumWindows failed: {:?}", e),
-        };
+    match unsafe { EnumWindows(Some(enum_window_callback), LPARAM(0)) } {
+        Ok(_) => (),
+        Err(e) => match e.code() {
+            E_ACCESS_DENIED => eprintln!("Tip: Try running as administrator."),
+            _ => (),
+        },
     }
 }
