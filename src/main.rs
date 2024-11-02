@@ -1,4 +1,4 @@
-use anyhow::anyhow;
+use anyhow::Context;
 use anyhow::Result;
 use windows::core::HRESULT;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
@@ -27,7 +27,7 @@ fn get_window_text(hwnd: HWND) -> Result<String> {
     let mut wide_buffer = vec![0u16; (text_length + 1) as usize];
     unsafe { GetWindowTextW(hwnd, &mut wide_buffer) };
     wide_string_to_string(&wide_buffer)
-        .map_err(|e| anyhow!("Failed to convert wide string to string: {:?}", e))
+        .with_context(|| format!("Failed to convert wide string to string: {:?}", wide_buffer))
 }
 
 /// Get the display percent of a rect on the screen
